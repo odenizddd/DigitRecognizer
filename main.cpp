@@ -43,7 +43,7 @@ std::vector<std::vector<double>> flatten(std::vector<std::vector<std::vector<dou
     return flatImages;
 }
 
-Eigen::MatrixXd read_file() {
+Eigen::MatrixXd read_file(int data_size) {
     std::ifstream ifs("MNIST_ORG/train-images.idx3-ubyte", std::ios::binary);
     if (!ifs.is_open()) {
         throw std::runtime_error("File cannot be opened.");
@@ -71,13 +71,15 @@ Eigen::MatrixXd read_file() {
 
     int image_size = rows * cols;
 
-    Eigen::MatrixXd images(number_of_images, image_size);
+    Eigen::MatrixXd images(image_size, data_size);
 
-    for (int i = 0; i < number_of_images; i++) {
-        std::vector<double> buffer(image_size);
+    if (data_size > number_of_images) throw std::runtime_error("Can't read that much data.");
+
+    for (int i = 0; i < data_size; i++) {
+        std::vector<uint8_t> buffer(image_size);
         ifs.read((char*)buffer.data(), image_size);
         for (int j = 0; j < image_size; j++) {
-            images(i, j) = (double) buffer[j] / 255.0;
+            images(j, i) = (double) buffer[j] / 255.0;
         }
     }
 
@@ -85,8 +87,8 @@ Eigen::MatrixXd read_file() {
     return images;
 }
 
-void initialize_params(std::vector<std::vector<std::vector<double>>>& weights,
-                       std::vector<std::vector<double>>& biases,
+void initialize_params(std::vector<Eigen::MatrixXd>& weights,
+                       std::vector<Eigen::VectorXd>& biases,
                        std::vector<int>& layer_sizes) {
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -95,13 +97,14 @@ void initialize_params(std::vector<std::vector<std::vector<double>>>& weights,
     for (int i = 1; i < layer_sizes.size(); i++) {
         int rows = layer_sizes[i];
         int cols = layer_sizes[i-1];
-        weights[i-1] = std::vector<std::vector<double>>(rows, std::vector<double>(cols));
-        biases[i-1] = std::vector<double>(rows);
+
+        weights[i-1] = Eigen::MatrixXd(layer_sizes[i], layer_sizes[i-1]);
+        biases[i-1] = Eigen::VectorXd(layer_sizes[i]);
 
         for (int row = 0; row < rows; row++) {
-            biases[i-1][row] = 0;
+            biases[i-1](row) = 0;
             for (int col = 0; col < cols; col++) {
-                weights[i-1][row][col] = d(gen);
+                weights[i-1](row, col) = d(gen);
             }
         }
     }
@@ -174,8 +177,18 @@ std::vector<std::vector<double>> transpose(std::vector<std::vector<double>>& mat
     return t;
 }
 
-std::vector<std::vector<std::vector<double>>> forward_propogation(const std::vector<std::vector<std::vector<double>>>& weights, const std::vector<std::vector<double>>& biases, std::vector<std::vector<double>>& inputs) {
-    std::vector<std::vector<std::vector<double>>> activations(1, matmul(weights[0], transpose(inputs)));
+std::vector<Eigen::MatrixXd> forward_propogation(const std::vector<Eigen::MatrixXd>& weights, const std::vector<Eigen::VectorXd>& biases, Eigen::MatrixXd& inputs) {
+    std::vector<Eigen::MatrixXd> activations(1, inputs);
+
+    // a_n = w_n * a_(n-1)
+    // a_n = [n x m]
+    // w_n = [k x n]
+
+    for (int i = 0; i < weights.size(); i++) {
+        Eigen::MatrixXd z = weights[i] * activations[i];
+        Eigen::MatrixXd a = z.unaryExpr([](double x) {return std::max(0.0, x);});
+        activations.push_back(a);
+    }
 
     return activations;
 }
@@ -185,12 +198,17 @@ int main() {
     auto start = std::chrono::high_resolution_clock::now();
 
     try {
-        Eigen::MatrixXd images = read_file();
+        Eigen::MatrixXd images = read_file(1); // 784 x 60000
 
         std::vector<int> layer_sizes = {784, 16, 16, 10};
-        std::vector<std::vector<std::vector<double>>> weights(layer_sizes.size()-1);
-        std::vector<std::vector<double>> biases(layer_sizes.size()-1);
+        std::vector<Eigen::MatrixXd> weights(layer_sizes.size()-1);
+        std::vector<Eigen::VectorXd> biases(layer_sizes.size()-1);
         initialize_params(weights, biases, layer_sizes);
+
+        std::vector<Eigen::MatrixXd> activations = forward_propogation(weights, biases, images);
+
+        Eigen::MatrixXd layer = activations[3];
+        std::cout << layer << std::endl;
 
     } catch(std::runtime_error &e) {
         std::cerr << e.what() << std::endl;
