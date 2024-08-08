@@ -43,11 +43,10 @@ std::vector<std::vector<double>> flatten(std::vector<std::vector<std::vector<dou
     return flatImages;
 }
 
-std::vector<std::vector<uint8_t>> read_file() {
+Eigen::MatrixXd read_file() {
     std::ifstream ifs("MNIST_ORG/train-images.idx3-ubyte", std::ios::binary);
     if (!ifs.is_open()) {
-        std::cerr << "File cannot be opened." << std::endl;
-        return std::vector<std::vector<uint8_t>>(0);
+        throw std::runtime_error("File cannot be opened.");
     }
 
     int32_t magic_number;
@@ -70,10 +69,16 @@ std::vector<std::vector<uint8_t>> read_file() {
     std::cout << "Rows: " << rows << std::endl;
     std::cout << "Cols: " << cols << std::endl;
 
-    std::vector<std::vector<uint8_t> > images(number_of_images, std::vector<uint8_t>(rows*cols));
+    int image_size = rows * cols;
+
+    Eigen::MatrixXd images(number_of_images, image_size);
 
     for (int i = 0; i < number_of_images; i++) {
-        ifs.read((char*)&images[i][0], rows*cols);
+        std::vector<double> buffer(image_size);
+        ifs.read((char*)buffer.data(), image_size);
+        for (int j = 0; j < image_size; j++) {
+            images(i, j) = (double) buffer[j] / 255.0;
+        }
     }
 
     ifs.close();
@@ -179,19 +184,16 @@ int main() {
 
     auto start = std::chrono::high_resolution_clock::now();
 
-    std::vector<std::vector<uint8_t>> pixels = read_file();
+    try {
+        Eigen::MatrixXd images = read_file();
 
-    std::vector<int> layer_sizes = {784, 16, 16, 10};
-    std::vector<std::vector<std::vector<double>>> weights(layer_sizes.size()-1);
-    std::vector<std::vector<double>> biases(layer_sizes.size()-1);
-    initialize_params(weights, biases, layer_sizes);
+        std::vector<int> layer_sizes = {784, 16, 16, 10};
+        std::vector<std::vector<std::vector<double>>> weights(layer_sizes.size()-1);
+        std::vector<std::vector<double>> biases(layer_sizes.size()-1);
+        initialize_params(weights, biases, layer_sizes);
 
-    std::vector<std::vector<double>> images(60000, std::vector<double>(784));
-
-    for (int i = 0; i < pixels.size(); i++) {
-        for (int j = 0; j < pixels[0].size(); j++) {
-            images[i][j] = (double)pixels[i][j] / 255.0;
-        }
+    } catch(std::runtime_error &e) {
+        std::cerr << e.what() << std::endl;
     }
 
     auto end = std::chrono::high_resolution_clock::now();
