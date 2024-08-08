@@ -1,0 +1,4 @@
+.vscode/
+eigen-*/
+MNIST_ORG/
+main
